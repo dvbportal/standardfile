@@ -2,6 +2,10 @@
 
 Golang implementation of the [Standard File](https://standardfile.org/) protocol.
 
+## Dockerized Version
+This is the dockerized version of the Standard File Go Server. All routes expect to begin with /api which is
+not the case when being used with standardnotes app. Please see the modified nginx configuration to take
+care of this.
 
 ### Running your own server
 You can run your own Standard File server, and use it with any SF compatible client (like Standard Notes).
@@ -66,25 +70,26 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/sf.example.com/privkey.pem;
 
     include snippets/ssl-params.conf;
-	
+
+    rewrite /(.*) /api/$1 break;
     location / {
-	add_header Access-Control-Allow-Origin '*' always;
-	add_header Access-Control-Allow-Credentials true always;
-	add_header Access-Control-Allow-Headers 'authorization,content-type' always;
-	add_header Access-Control-Allow-Methods 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
-	add_header Access-Control-Expose-Headers 'Access-Token, Client, UID' always;
+    	add_header Access-Control-Allow-Origin '*' always;
+    	add_header Access-Control-Allow-Credentials true always;
+    	add_header Access-Control-Allow-Headers 'authorization,content-type' always;
+    	add_header Access-Control-Allow-Methods 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
+    	add_header Access-Control-Expose-Headers 'Access-Token, Client, UID' always;
 
-	if ($request_method = OPTIONS ) {
-		return 200;
-	}
+    	if ($request_method = OPTIONS ) {
+    		return 200;
+    	}
 
-	proxy_set_header        Host $host;
-	proxy_set_header        X-Real-IP $remote_addr;
-	proxy_set_header        X-Forwarded-For $proxy_add_x_forwarded_for;
-	proxy_set_header        X-Forwarded-Proto $scheme;
+    	proxy_set_header        Host $host;
+    	proxy_set_header        X-Real-IP $remote_addr;
+    	proxy_set_header        X-Forwarded-For $proxy_add_x_forwarded_for;
+    	proxy_set_header        X-Forwarded-Proto $scheme;
 
-	proxy_pass          http://localhost:8888;
-	proxy_read_timeout  90;
+    	proxy_pass          http://localhost:8888;
+    	proxy_read_timeout  90;
     }
 }
 ```
