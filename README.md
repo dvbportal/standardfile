@@ -16,10 +16,10 @@ verify the signed binary.
 
 The container exposes two optional VOLUMEs:
 
-/stdfile/logs, to use for writing persistent logs. Its content is also tailed into docker logs.
-/stdfile/db, to use for writing persistent storage data.
+* **/stdfile/logs**, to use for writing persistent logs. Its content is also tailed into docker logs.
+* **/stdfile/db**, to use for writing persistent storage data.
 
-The standard port exposed by the container is 8888.
+The standard port exposed by the container is **8888**.
 
 ### Running your own server
 You can run your own Standard File server, and use it with any SF compatible client (like Standard Notes).
