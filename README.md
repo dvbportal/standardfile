@@ -7,6 +7,20 @@ This is the dockerized version of the Standard File Go Server. All routes expect
 not the case when being used with standardnotes app. Please see the modified nginx configuration to take
 care of this.
 
+We chose Alpine as a lightweight base with a reasonably small surface area for security concerns, but with enough functionality for development and interactive debugging.
+
+The base image always runs under dumb-init, which handles reaping zombie processes and forwards signals on to all processes running in the container. This base image is built by HashiCorp and signed with their GPG key, so you can verify the signed package.
+
+Standardfile runs on this minimal base image and is built by dvbportal and signed with our GPG key, so you can
+verify the signed binary.
+
+The container exposes two optional VOLUMEs:
+
+/stdfile/logs, to use for writing persistent logs. Its content is also tailed into docker logs.
+/stdfile/db, to use for writing persistent storage data.
+
+The standard port exposed by the container is 8888.
+
 ### Running your own server
 You can run your own Standard File server, and use it with any SF compatible client (like Standard Notes).
 This allows you to have 100% control of your data.
