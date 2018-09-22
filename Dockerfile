@@ -2,7 +2,7 @@ FROM alpine:3.4
 MAINTAINER Hans J Schroeder <hs@cloudno.de> (@cloudno_de)
 
 # This is the release of Standardfile to pull in.
-ENV STANDARDFILE_VERSION=0.1.1
+ENV STANDARDFILE_VERSION=0.3.2
 
 # This is the release of https://github.com/hashicorp/docker-base to pull in order
 # to provide HashiCorp-built versions of basic utilities like dumb-init and gosu.
