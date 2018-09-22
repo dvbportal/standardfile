@@ -1,5 +1,6 @@
 standardfile
 .DS_Store
-db/sf.db
+*.db
 pid
 log
+dist

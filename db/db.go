@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"reflect"
 
@@ -10,7 +11,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const SCHEMA string = `
+const schema string = `
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
 CREATE TABLE IF NOT EXISTS "items" (
@@ -21,9 +22,21 @@ CREATE TABLE IF NOT EXISTS "items" (
     "enc_item_key" varchar(255) NOT NULL,
     "auth_hash" varchar(255) NOT NULL,
     "deleted" integer(1) NOT NULL DEFAULT 0,
-    "created_at" timestamp NOT NULL,
-    "updated_at" timestamp NOT NULL);
-CREATE TABLE IF NOT EXISTS "users" ("uuid" varchar(36) primary key NULL, "email" varchar(255) NOT NULL, "password" varchar(255) NOT NULL, "pw_func" varchar(255) NOT NULL DEFAULT "pbkdf2", "pw_alg" varchar(255) NOT NULL DEFAULT "sha512", "pw_cost" integer NOT NULL DEFAULT 5000, "pw_key_size" integer NOT NULL DEFAULT 512, "pw_nonce" varchar(255) NOT NULL, "created_at" timestamp NOT NULL, "updated_at" timestamp NOT NULL);
+    "created_at" timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    "updated_at" timestamp DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS "users" (
+    "uuid" varchar(36) primary key NULL,
+    "email" varchar(255) NOT NULL,
+    "password" varchar(255) NOT NULL,
+    "pw_func" varchar(255) NOT NULL DEFAULT "pbkdf2",
+    "pw_alg" varchar(255) NOT NULL DEFAULT "sha512",
+    "pw_cost" integer NOT NULL DEFAULT 5000,
+    "pw_key_size" integer NOT NULL DEFAULT 512,
+    "pw_nonce" varchar(255) NOT NULL,
+    "pw_auth" varchar(255) NOT NULL,
+    "pw_salt" varchar(255) NOT NULL,
+    "created_at" timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    "updated_at" timestamp DEFAULT CURRENT_TIMESTAMP);
 CREATE INDEX IF NOT EXISTS user_uuid ON items (user_uuid);
 CREATE INDEX IF NOT EXISTS user_content on items (user_uuid, content_type);
 CREATE INDEX IF NOT EXISTS updated_at on items (updated_at);
@@ -34,6 +47,11 @@ COMMIT;
 //Database encapsulates database
 type Database struct {
 	db *sql.DB
+}
+
+//DB returns DB handler
+func DB() *sql.DB {
+	return database.db
 }
 
 func (db Database) begin() (tx *sql.Tx) {
@@ -57,7 +75,7 @@ func (db Database) prepare(q string) (stmt *sql.Stmt) {
 
 func (db Database) createTables() {
 	// create table if not exists
-	_, err = db.db.Exec(SCHEMA)
+	_, err = db.db.Exec(schema)
 	if err != nil {
 		panic(err)
 	}
@@ -66,6 +84,7 @@ func (db Database) createTables() {
 var database Database
 var err error
 
+//Init opens DB connection
 func Init(dbpath string) {
 	database.db, err = sql.Open("sqlite3", dbpath+"?loc=auto&parseTime=true")
 	// database.db, err = sql.Open("mysql", "Username:Password@tcp(Host:Port)/standardfile?parseTime=true")
@@ -117,28 +136,57 @@ func SelectStruct(sql string, obj interface{}, args ...interface{}) (interface{}
 
 	stmt := database.prepare(sql)
 	defer stmt.Close()
-	err := stmt.QueryRow(args...).Scan(values...)
+
+	rows, err := stmt.Query(args...)
+	defer rows.Close()
 	if err != nil {
 		return nil, err
 	}
-	return obj, nil
+	for rows.Next() {
+		err = sqlstruct.Scan(destv.Interface(), rows)
+	}
+	return obj, err
 }
 
 //Select - selects multiple results from the DB
-func Select(sql string, obj interface{}, args ...interface{}) (result []interface{}, err error) {
-	destv := reflect.ValueOf(obj)
-	elem := destv.Elem()
-	typeOfObj := elem.Type()
+func Select(sql string, out interface{}, args ...interface{}) (err error) {
 	stmt := database.prepare(sql)
 	defer stmt.Close()
 
 	rows, err := stmt.Query(args...)
 	defer rows.Close()
 
-	for rows.Next() {
-		var o = reflect.New(typeOfObj).Interface()
-		err = sqlstruct.Scan(o, rows)
-		result = append(result, o)
+	results := indirect(reflect.ValueOf(out))
+	resultType := results.Type().Elem()
+	isPtr := false
+
+	if kind := results.Kind(); kind == reflect.Slice {
+		resultType := results.Type().Elem()
+		results.Set(reflect.MakeSlice(results.Type(), 0, 0))
+
+		if resultType.Kind() == reflect.Ptr {
+			isPtr = true
+			resultType = resultType.Elem()
+		}
+	} else if kind != reflect.Struct {
+		return fmt.Errorf("unsupported destination, should be slice or struct")
 	}
-	return result, err
+
+	for rows.Next() {
+		var o = reflect.New(resultType)
+		err = sqlstruct.Scan(o.Interface(), rows)
+		if isPtr {
+			results.Set(reflect.Append(results, o.Elem().Addr()))
+		} else {
+			results.Set(reflect.Append(results, o.Elem()))
+		}
+	}
+	return err
+}
+
+func indirect(reflectValue reflect.Value) reflect.Value {
+	for reflectValue.Kind() == reflect.Ptr {
+		reflectValue = reflectValue.Elem()
+	}
+	return reflectValue
 }

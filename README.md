@@ -53,11 +53,11 @@ standardfile
 3. Stop the server:
 
 ```
-standardfile -s stop
+standardfile -stop
 ```
 ### Configuration options
 
-# Customize port and database location
+#### Customize port and database location
 ```
 -p 8080
 ```
@@ -66,6 +66,25 @@ and
 -db /var/lib/sf.db
 ```
 default port is `8888` and database file named `sf.db` will be created in working directory
+
+#### Run the server in foreground:
+
+```
+standardfile -foreground
+```
+
+This will not daemonise the service, which might be handy if you want to handle that on some other level, like with init system, inside docker container, etc. 
+
+To stop the service, kill the process or press `ctrl-C` if running in terminal.
+
+#### Migrations
+To perform migrations run `standardfile -migrate`
+
+_Perform migration upon updating to v0.2.0_
+
+#### Disable registration
+To disable registration run with `standardfile -noreg`
+
 
 ### Deploying to a live server
 I suggest putting it behind nginx with https enabled location

@@ -10,34 +10,48 @@ import (
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
+	"github.com/kisielk/sqlstruct"
 	"github.com/satori/go.uuid"
 	"github.com/tectiv3/standardfile/db"
 )
 
 //User is the user type
 type User struct {
-	Uuid        string    `json:"uuid"`
-	Email       string    `json:"email"`
-	Password    string    `json:"password"`
-	Pw_func     string    `json:"pw_func"`
-	Pw_alg      string    `json:"pw_alg"`
-	Pw_cost     int       `json:"pw_cost"`
-	Pw_key_size int       `json:"pw_key_size"`
-	Pw_nonce    string    `json:"pw_nonce"`
-	Created_at  time.Time `json:"created_at"`
-	Updated_at  time.Time `json:"updated_at"`
+	UUID      string    `json:"uuid"`
+	Email     string    `json:"email"`
+	Password  string    `json:"password,omitempty"`
+	PwFunc    string    `json:"pw_func"     sql:"pw_func"`
+	PwAlg     string    `json:"pw_alg"      sql:"pw_alg"`
+	PwCost    int       `json:"pw_cost"     sql:"pw_cost"`
+	PwKeySize int       `json:"pw_key_size" sql:"pw_key_size"`
+	PwNonce   string    `json:"pw_nonce,omitempty"    sql:"pw_nonce"`
+	PwAuth    string    `json:"pw_auth,omitempty"     sql:"pw_auth"`
+	PwSalt    string    `json:"pw_salt,omitempty"     sql:"pw_salt"`
+	CreatedAt time.Time `json:"created_at"  sql:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"  sql:"updated_at"`
+}
+
+//Params is params type
+type Params struct {
+	PwFunc    string `json:"pw_func"     sql:"pw_func"`
+	PwAlg     string `json:"pw_alg"      sql:"pw_alg"`
+	PwCost    int    `json:"pw_cost"     sql:"pw_cost"`
+	PwKeySize int    `json:"pw_key_size" sql:"pw_key_size"`
+	PwSalt    string `json:"pw_salt"     sql:"pw_salt"`
+	Version   string `json:"version"`
 }
 
 //NewPassword - incomming json password change
 type NewPassword struct {
 	User
-	New_password string `json:"new_password"`
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
 }
 
 //UserClaims - jwt claims
 type UserClaims struct {
-	Uuid    string `json:"uuid"`
-	Pw_hash string `json:"pw_hash"`
+	UUID   string `json:"uuid"`
+	PwHash string `json:"pw_hash"`
 	jwt.StandardClaims
 }
 
@@ -55,12 +69,12 @@ func init() {
 //NewUser - user constructor
 func NewUser() User {
 	user := User{}
-	user.Pw_cost = 5000
-	user.Pw_alg = "sha512"
-	user.Pw_key_size = 512
-	user.Pw_func = "pbkdf2"
-	user.Created_at = time.Now()
-	user.Updated_at = time.Now()
+	user.PwCost = 5000
+	user.PwAlg = "sha512"
+	user.PwKeySize = 512
+	user.PwFunc = "pbkdf2"
+	user.CreatedAt = time.Now()
+	user.UpdatedAt = time.Now()
 	return user
 }
 
@@ -68,27 +82,31 @@ func NewUser() User {
 func (u *User) LoadValue(name string, value []string) {
 	switch name {
 	case "uuid":
-		u.Uuid = value[0]
+		u.UUID = value[0]
 	case "email":
 		u.Email = value[0]
 	case "password":
 		u.Password = value[0]
 	case "pw_func":
-		u.Pw_func = value[0]
+		u.PwFunc = value[0]
 	case "pw_alg":
-		u.Pw_alg = value[0]
+		u.PwAlg = value[0]
+	case "pw_auth":
+		u.PwAuth = value[0]
+	case "pw_salt":
+		u.PwSalt = value[0]
 	case "pw_cost":
-		u.Pw_cost, _ = strconv.Atoi(value[0])
+		u.PwCost, _ = strconv.Atoi(value[0])
 	case "pw_key_size":
-		u.Pw_key_size, _ = strconv.Atoi(value[0])
+		u.PwKeySize, _ = strconv.Atoi(value[0])
 	case "pw_nonce":
-		u.Pw_nonce = value[0]
+		u.PwNonce = value[0]
 	}
 }
 
 //save - save current user into DB
-func (u *User) save() error {
-	if u.Uuid != "" {
+func (u *User) create() error {
+	if u.UUID != "" {
 		return fmt.Errorf("Trying to save existing user")
 	}
 
@@ -100,11 +118,33 @@ func (u *User) save() error {
 		return fmt.Errorf("Unable to register")
 	}
 
-	u.Uuid = uuid.NewV4().String()
+	u.UUID = uuid.Must(uuid.NewV4()).String()
 	u.Password = Hash(u.Password)
-	u.Created_at = time.Now()
+	u.CreatedAt = time.Now()
 
-	err := db.Query("INSERT INTO users (uuid, email, password, pw_func, pw_alg, pw_cost, pw_key_size, pw_nonce, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)", u.Uuid, u.Email, u.Password, u.Pw_func, u.Pw_alg, u.Pw_cost, u.Pw_key_size, u.Pw_nonce, u.Created_at, u.Updated_at)
+	err := db.Query("INSERT INTO users (uuid, email, password, pw_func, pw_alg, pw_cost, pw_key_size, pw_nonce, pw_auth, pw_salt, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", u.UUID, u.Email, u.Password, u.PwFunc, u.PwAlg, u.PwCost, u.PwKeySize, u.PwNonce, u.PwAuth, u.PwSalt, u.CreatedAt, u.UpdatedAt)
+
+	if err != nil {
+		Log(err)
+	}
+
+	return err
+}
+
+//UpdatePassword - update password
+func (u *User) UpdatePassword(np NewPassword) error {
+	if u.UUID == "" {
+		return fmt.Errorf("Unknown user")
+	}
+
+	u.Password = Hash(np.NewPassword)
+	u.PwCost = np.PwCost
+	u.PwSalt = np.PwSalt
+	u.PwNonce = np.PwNonce
+
+	u.UpdatedAt = time.Now()
+	// TODO: validate incomming pw params
+	err := db.Query("UPDATE `users` SET `password`=?, `pw_cost`=?, `pw_salt`=?, `pw_nonce`=?, `updated_at`=? WHERE `uuid`=?", u.Password, u.PwCost, u.PwSalt, u.PwNonce, u.UpdatedAt, u.UUID)
 
 	if err != nil {
 		Log(err)
@@ -114,22 +154,14 @@ func (u *User) save() error {
 	return nil
 }
 
-//Update - update password
-func (u *User) Update(np NewPassword) error {
-	if u.Uuid == "" {
+//UpdateParams - update params
+func (u *User) UpdateParams(p Params) error {
+	if u.UUID == "" {
 		return fmt.Errorf("Unknown user")
 	}
 
-	u.Password = Hash(np.New_password)
-	u.Pw_func = np.Pw_func
-	u.Pw_alg = np.Pw_alg
-	u.Pw_cost = np.Pw_cost
-	u.Pw_key_size = np.Pw_key_size
-	u.Pw_nonce = np.Pw_nonce
-
-	u.Updated_at = time.Now()
-	// TODO: validate incomming pw params
-	err := db.Query("UPDATE `users` SET `password`=?, `pw_func`=?, `pw_alg`=?, `pw_cost`=?, `pw_key_size`=?, `pw_nonce`=?, `updated_at`=? WHERE `uuid`=?", u.Password, u.Pw_func, u.Pw_alg, u.Pw_cost, u.Pw_key_size, u.Pw_nonce, u.Updated_at, u.Uuid)
+	u.UpdatedAt = time.Now()
+	err := db.Query("UPDATE `users` SET `pw_func`=?, `pw_alg`=?, `pw_cost`=?, `pw_key_size`=?, `pw_salt`=?, `updated_at`=? WHERE `uuid`=?", u.PwFunc, u.PwAlg, u.PwCost, u.PwKeySize, u.PwSalt, time.Now(), u.UUID)
 
 	if err != nil {
 		Log(err)
@@ -141,7 +173,7 @@ func (u *User) Update(np NewPassword) error {
 
 //Register - creates user and returns token
 func (u *User) Register() (string, error) {
-	err := u.save()
+	err := u.create()
 	if err != nil {
 		return "", err
 	}
@@ -170,7 +202,7 @@ func (u User) Exists() bool {
 func (u *User) Login(email, password string) (string, error) {
 	u.loadByEmailAndPassword(email, Hash(password))
 
-	if u.Uuid == "" {
+	if u.UUID == "" {
 		return "", fmt.Errorf("Invalid email or password")
 	}
 
@@ -184,9 +216,9 @@ func (u *User) Login(email, password string) (string, error) {
 
 //LoadByUUID - loads user info from DB
 func (u *User) LoadByUUID(uuid string) bool {
-	_, err := db.SelectStruct("SELECT * FROM `users` WHERE `uuid`=?", u, uuid)
+	_, err := db.SelectStruct(fmt.Sprintf("SELECT %s FROM `users` WHERE `uuid`=?", sqlstruct.Columns(User{})), u, uuid)
 	if err != nil {
-		Log(err)
+		Log("Load err:", err)
 		return false
 	}
 
@@ -196,7 +228,7 @@ func (u *User) LoadByUUID(uuid string) bool {
 //CreateToken - will create JWT token
 func (u User) CreateToken() (string, error) {
 	claims := UserClaims{
-		u.Uuid,
+		u.UUID,
 		u.Password,
 		jwt.StandardClaims{
 			IssuedAt: time.Now().Unix(),
@@ -227,25 +259,42 @@ func (u *User) loadByEmailAndPassword(email, password string) {
 }
 
 //GetParams returns auth parameters by email
-func (u User) GetParams(email string) interface{} {
-	// if u.Email != email {}
+func (u User) GetParams(email string) map[string]interface{} {
 	u.loadByEmail(email)
-
 	params := map[string]interface{}{}
-	params["pw_cost"] = u.Pw_cost
-	params["pw_alg"] = u.Pw_alg
-	params["pw_key_size"] = u.Pw_key_size
-	params["pw_func"] = u.Pw_func
 
-	var salt string
-	if u.Pw_nonce != "" {
-		salt = email + "SN" + u.Pw_nonce
-	} else {
-		salt = email + "SN" + "a04a8fe6bcb19ba61c5c0873d391e987982fbbd4"
+	if u.Email == "" {
+		return params
 	}
-	params["pw_salt"] = strings.Replace(fmt.Sprintf("% x", sha1.Sum([]byte(salt))), " ", "", -1)
-  params["version"] = "001"
+
+	params["version"] = "003"
+	params["pw_cost"] = u.PwCost
+	params["identifier"] = u.Email
+
+	if u.PwFunc != "" {
+		params["pw_func"] = u.PwFunc
+		params["pw_alg"] = u.PwAlg
+		params["pw_key_size"] = u.PwKeySize
+	}
+
+	if u.PwNonce != "" {
+		params["pw_nonce"] = u.PwNonce
+	}
+
+	if u.PwSalt == "" {
+		nonce := u.PwNonce
+		if nonce == "" {
+			nonce = "a04a8fe6bcb19ba61c5c0873d391e987982fbbd4"
+		}
+		u.PwSalt = getSalt(u.Email, nonce)
+	}
+	params["pw_salt"] = u.PwSalt
+
 	return params
+}
+
+func getSalt(email, nonce string) string {
+	return strings.Replace(fmt.Sprintf("% x", sha1.Sum([]byte(email+"SN"+nonce))), " ", "", -1)
 }
 
 //Validate - validates password from jwt
@@ -256,7 +305,7 @@ func (u User) Validate(password string) bool {
 //ToJSON - return map without pw and nonce
 func (u User) ToJSON() interface{} {
 	u.Password = ""
-	u.Pw_nonce = ""
+	u.PwNonce = ""
 	return u
 }
 
