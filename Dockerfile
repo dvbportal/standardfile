@@ -59,4 +59,4 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["docker-entrypoint.sh"]
 
 WORKDIR /stdfile/logs
-CMD ["standardfile", "'-db /stdfile/db/sf.db'"]
+CMD ["standardfile","-db","/stdfile/db/sf.db"]
